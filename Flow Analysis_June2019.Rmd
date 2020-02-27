@@ -1,0 +1,98 @@
+---
+title: "Flow Analysis"
+author: "Madelyn Houser"
+date: "June 6, 2019"
+output:
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Required Packages
+
+If you do not have any of these packages, install them using ```install.packages("")```
+
+```{r packages}
+packageVersion("stats")
+packageVersion("ggplot2")
+```
+
+# Spreadsheet Formatting
+
+First we'll import our spreadsheet (you'll need to replace the filepath with the correct one for your computer if you want to manipulate it in R). This file contains the values for the microglial flow data calculated as the fold change of the Asyn hemisphere relative to the unlesioned hemisphere for each animal ID. I also tweaked the format of the Timepoint column for prettier graphs. This is a sample of how it looks:
+
+```{r import dataframe}
+FCdf <- read.csv("C:/Users/mecho/Documents/TANSEY_LAB/RAnalyses/DataFiles/ExampleFiles/RMarkdownex.csv")
+FCdf[,1:4]
+```
+
+We can count any empty cells:
+
+```{r is.na}
+sum(is.na(FCdf))
+```
+
+And we can see if Excel replaced any missing values with characters:
+
+```{r count factor}
+for (i in 4:length(FCdf)){
+  print(class(FCdf[,i]))
+}
+```
+
+We can see we have a problem in the 8th column of numbers (the 11th column of the whole spreadsheet). Let's see that:
+
+```{r column 11}
+FCdf[,11]
+```
+
+Since our issue is in the form of "#VALUE!", let's replace that with 1. (We're assuming that the NA in the original spreadsheet was due to no detection of the target rather than an error in FlowJo, though it might well be an error in FlowJo. Worth checking.)
+
+```{r replace NA with 1}
+FCdf[,11] <- as.character(FCdf[,11])
+FCdf[FCdf== "#VALUE!"] <- 1
+FCdf[,11] <- as.numeric(FCdf[,11])
+```
+
+Let's also remove those 2 rows with "Control" as the Treatment, since I don't know what those are, and they'll make interpreting our results more complicated.
+
+```{r remove Controls}
+FCdf <- FCdf[-c(15:16),]
+```
+
+# Two-way ANOVAs (Fold change from unaffected hemisphere, Timepoint vs Treatment)
+
+Now let's run two-way ANOVAs on each column, with timepoint and treatment as the two factors.
+
+```{r ANOVAs}
+colnames <- names(FCdf)
+for(i in 4:length(FCdf)){
+    anovadata <- summary(aov(FCdf[,i] ~ Timepoint + Treatment + Timepoint:Treatment, FCdf, na.action=na.omit))
+    cat(paste("\n", colnames[i], "\n"))
+    print(anovadata)
+  }
+```
+
+# Graphs (Fold change from unaffected hemisphere, Timepoint vs Treatment)
+
+Let's visualize the data.
+
+```{r graphs, fig.height=4, fig.width=6}
+library(ggplot2)
+for(cn in 4:length(FCdf)){
+  print(ggplot(FCdf, aes_string(x="Timepoint", y=colnames[cn], color="Treatment"))
+        + geom_jitter(aes(shape=Treatment), position=position_jitterdodge(jitter.width=0.3, dodge.width=0.9), size=3)
+        + scale_color_grey() + theme_classic()
+        + ggtitle(paste("\n", colnames[cn])) 
+        + theme(text=element_text(size=12), plot.title = element_text(hjust=0.5),
+                axis.title.x = element_blank(), legend.position="right")
+        + stat_summary(
+          fun.ymax=function(i) mean(i) + (sd(i)/sqrt(length(i))), 
+          fun.ymin=function(i) mean(i) - (sd(i)/sqrt(length(i))),
+          geom="errorbar", width=0.2, position=position_dodge(width=0.9)))
+}
+```
